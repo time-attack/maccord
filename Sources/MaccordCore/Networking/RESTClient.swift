@@ -36,6 +36,8 @@ public actor RESTClient {
         config.httpAdditionalHeaders = [:]
         config.timeoutIntervalForRequest = 30
         config.waitsForConnectivity = true
+        // Headroom so background preloads don't queue behind the foreground load.
+        config.httpMaximumConnectionsPerHost = 10
         self.session = URLSession(configuration: config)
     }
 

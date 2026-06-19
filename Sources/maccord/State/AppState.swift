@@ -537,6 +537,7 @@ final class AppState {
     func selectGuild(_ guildID: Snowflake?) {
         selectedGuildID = guildID
         if let guildID, let store = guildStores[guildID] {
+            Task { await hydrateGuildIfNeeded(guildID) }
             preloadGuild(guildID)
             let target = lastChannelByGuild[guildID] ?? store.defaultChannel?.id
             if let target { Task { await selectChannel(target) } }
@@ -1030,9 +1031,17 @@ final class AppState {
     var myMembers: [Snowflake: Member] = [:]
     func myRoleIDs(in guildID: Snowflake) -> [Snowflake]? { myMembers[guildID]?.roles }
 
+    private var hydratingGuilds: Set<Snowflake> = []
+
     /// Fetch roles/channels/own-member for a guild whose READY didn't hydrate them.
+    /// Guarded so the foreground select, the per-guild preload, and the background
+    /// sweep don't all fetch the same guild at once.
     func hydrateGuildIfNeeded(_ guildID: Snowflake) async {
-        guard let store = guildStores[guildID] else { return }
+        guard let store = guildStores[guildID], !hydratingGuilds.contains(guildID) else { return }
+        let needs = store.roles.count <= 1 || store.channels.isEmpty || myMembers[guildID] == nil
+        guard needs else { return }
+        hydratingGuilds.insert(guildID)
+        defer { hydratingGuilds.remove(guildID) }
         // Roles: refetch when only @everyone is present (so colors/lists work).
         if store.roles.count <= 1, let roles = try? await rest.fetchGuildRoles(guildID) {
             for role in roles { store.roles[role.id] = role }
@@ -1054,50 +1063,52 @@ final class AppState {
 
     private var hydrationTask: Task<Void, Never>?
 
-    /// After login, fetch every guild's channel list (so the quick switcher is
-    /// complete and switches are instant) and preload message history for the
-    /// most relevant channels — all throttled to 10 in flight.
+    /// After login, gently fill in every guild's channel list (so the quick
+    /// switcher is complete) and preload *unread* channels — all at background
+    /// priority, low concurrency, and after a short delay, so it never competes
+    /// with the channel you actually open or trips Discord's global rate limit.
     func startBackgroundPreloading() {
         guard !isBotAccount else { return }   // bots already get guilds via GUILD_CREATE
         hydrationTask?.cancel()
-        hydrationTask = Task { [weak self] in
+        hydrationTask = Task(priority: .background) { [weak self] in
+            // Let the first channel load before we touch the network in bulk.
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard let self else { return }
-            await self.runThrottled(self.guildOrder, limit: 10) { [weak self] gid in
+            await self.runThrottled(self.guildOrder, limit: 3, priority: .background) { [weak self] gid in
                 await self?.hydrateGuildIfNeeded(gid)
             }
-            await self.preloadPriorityChannels()
+            await self.preloadUnread()
         }
     }
 
-    /// Preload initial history for unread channels, the current guild, and DMs.
-    private func preloadPriorityChannels() async {
+    /// Preload only unread channels/DMs (the high-value case), very gently.
+    private func preloadUnread() async {
         var targets: [Snowflake] = []
         var seen = Set<Snowflake>()
-        func add(_ id: Snowflake) { if seen.insert(id).inserted { targets.append(id) } }
-
+        func add(_ id: Snowflake) {
+            guard id != selectedChannelID, seen.insert(id).inserted else { return }
+            targets.append(id)
+        }
         for store in guildStores.values {
             for c in store.channels.values where c.type.isTextLike && readState.isUnread(c.id) { add(c.id) }
         }
-        if let gid = selectedGuildID, let store = guildStores[gid] {
-            for c in store.channels.values where c.type.isTextLike { add(c.id) }
-        }
-        for dm in dms { add(dm.id) }
-
-        await runThrottled(Array(targets.prefix(60)), limit: 10) { [weak self] id in
+        for dm in dms where readState.isUnread(dm.id) { add(dm.id) }
+        await runThrottled(Array(targets.prefix(20)), limit: 2, priority: .background) { [weak self] id in
             await self?.messageStore(for: id).loadInitialIfNeeded()
         }
     }
 
-    /// Preload the remaining text channels of a guild when you open it, so moving
-    /// between channels in that server is instant. Throttled to 10 in flight.
+    /// When you open a guild, preload its other text channels — but deferred and
+    /// at background priority so the channel you just clicked loads first.
     func preloadGuild(_ guildID: Snowflake) {
-        Task { [weak self] in
+        Task(priority: .background) { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard let self else { return }
-            await self.hydrateGuildIfNeeded(guildID)
+            let selected = self.selectedChannelID
             let ids = self.guildStores[guildID]?.channels.values
-                .filter { $0.type.isTextLike }
+                .filter { $0.type.isTextLike && $0.id != selected }
                 .map(\.id) ?? []
-            await self.runThrottled(Array(ids.prefix(30)), limit: 10) { [weak self] id in
+            await self.runThrottled(Array(ids.prefix(20)), limit: 2, priority: .background) { [weak self] id in
                 await self?.messageStore(for: id).loadInitialIfNeeded()
             }
         }
@@ -1105,6 +1116,7 @@ final class AppState {
 
     /// Run `body` over `items` with at most `limit` tasks in flight at once.
     private func runThrottled<T: Sendable>(_ items: [T], limit: Int,
+                                           priority: TaskPriority = .medium,
                                            _ body: @escaping @Sendable (T) async -> Void) async {
         guard !items.isEmpty else { return }
         await withTaskGroup(of: Void.self) { group in
@@ -1112,7 +1124,7 @@ final class AppState {
             func addNext() {
                 guard index < items.count else { return }
                 let item = items[index]; index += 1
-                group.addTask { await body(item) }
+                group.addTask(priority: priority) { await body(item) }
             }
             for _ in 0..<min(limit, items.count) { addNext() }
             for await _ in group { addNext() }

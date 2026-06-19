@@ -71,7 +71,10 @@ enum DiscordMarkdown {
         collect(channelRegex) { m, ns in
             let id = Snowflake(string: ns.substring(with: m.range(at: 1))) ?? Snowflake(0)
             let name = context.channels[id] ?? "channel"
-            return mentionFragment("#\(name)", isSelf: false)
+            var frag = mentionFragment("#\(name)", isSelf: false)
+            // Clickable → navigate to the channel (handled by the openURL action).
+            frag.link = URL(string: "maccord://channel/\(id.rawValue)")
+            return frag
         }
         collect(roleRegex) { m, ns in
             let id = Snowflake(string: ns.substring(with: m.range(at: 1))) ?? Snowflake(0)

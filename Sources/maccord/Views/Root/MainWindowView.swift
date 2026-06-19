@@ -79,6 +79,41 @@ struct MainWindowView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: app.showMemberList)
         .animation(.easeOut(duration: 0.12), value: app.showQuickSwitcher)
+        // Route clicks on channel mentions / Discord message links into in-app
+        // navigation; everything else opens in the default browser.
+        .environment(\.openURL, OpenURLAction { url in handleURL(url) })
+    }
+
+    private func handleURL(_ url: URL) -> OpenURLAction.Result {
+        // maccord://channel/<id> — channel mention.
+        if url.scheme == "maccord" {
+            if url.host == "channel", let raw = UInt64(url.lastPathComponent) {
+                navigate(channel: Snowflake(raw), message: nil)
+            }
+            return .handled
+        }
+        // https://discord.com/channels/<guild>/<channel>/<message?>
+        if let host = url.host, host.contains("discord.com") {
+            let parts = url.pathComponents   // ["/", "channels", guild, channel, message?]
+            if parts.count >= 4, parts[1] == "channels", let cid = UInt64(parts[3]) {
+                let guild = parts[2] == "@me" ? nil : UInt64(parts[2]).map { Snowflake($0) }
+                let message = parts.count >= 5 ? UInt64(parts[4]).map { Snowflake($0) } : nil
+                app.selectedGuildID = guild
+                navigate(channel: Snowflake(cid), message: message)
+                return .handled
+            }
+        }
+        return .systemAction   // open in the browser
+    }
+
+    private func navigate(channel: Snowflake, message: Snowflake?) {
+        if app.selectedGuildID == nil, let gid = app.channelsByID[channel]?.guildID {
+            app.selectedGuildID = gid
+        }
+        Task {
+            await app.selectChannel(channel)
+            if let message { app.jumpToMessage(message, in: channel) }
+        }
     }
 
     @ViewBuilder

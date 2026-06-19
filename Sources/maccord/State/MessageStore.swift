@@ -17,6 +17,7 @@ final class MessageStore {
     var loadError: String?
 
     private let rest: RESTClient
+    private var initialLoadTask: Task<Void, Never>?
 
     init(channelID: Snowflake, guildID: Snowflake?, rest: RESTClient) {
         self.channelID = channelID
@@ -26,9 +27,16 @@ final class MessageStore {
 
     // MARK: Loading
 
+    /// Load the first page once. Concurrent callers (a background preload and the
+    /// foreground open hitting the same channel) share the single in-flight load
+    /// instead of firing two requests.
     func loadInitialIfNeeded() async {
         guard !loadedInitial else { return }
-        await loadInitial()
+        if let task = initialLoadTask { await task.value; return }
+        let task = Task { await self.loadInitial() }
+        initialLoadTask = task
+        await task.value
+        initialLoadTask = nil
     }
 
     func loadInitial() async {
