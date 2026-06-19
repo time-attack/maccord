@@ -12,6 +12,7 @@ struct ComposerTextEditor: NSViewRepresentable {
     var spellcheck: Bool = true
     var onSend: () -> Void
     var onChange: () -> Void
+    var onPasteImage: (Data, String) -> Void = { _, _ in }
 
     private let minHeight: CGFloat = 22
     private let maxHeight: CGFloat = 200
@@ -35,6 +36,7 @@ struct ComposerTextEditor: NSViewRepresentable {
         textView.allowsUndo = true
         textView.isContinuousSpellCheckingEnabled = spellcheck
         textView.isAutomaticSpellingCorrectionEnabled = spellcheck
+        textView.onPasteImage = onPasteImage
         textView.textContainerInset = NSSize(width: 0, height: 1)
         textView.textContainer?.lineFragmentPadding = 0
         textView.isVerticallyResizable = true
@@ -113,6 +115,21 @@ struct ComposerTextEditor: NSViewRepresentable {
 /// markdown markers for Cmd+B/I/U (Discord's composer formatting shortcuts).
 final class PlaceholderTextView: NSTextView {
     var placeholder: String = ""
+    var onPasteImage: ((Data, String) -> Void)?
+
+    /// Paste an image from the clipboard as an upload; otherwise paste text.
+    override func paste(_ sender: Any?) {
+        let pb = NSPasteboard.general
+        if let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
+           let image = images.first,
+           let tiff = image.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiff),
+           let png = bitmap.representation(using: .png, properties: [:]) {
+            onPasteImage?(png, "pasted-image.png")
+            return
+        }
+        super.paste(sender)
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,

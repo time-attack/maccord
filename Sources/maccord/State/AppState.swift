@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import AppKit
 import MaccordCore
 
 /// Root application state. Owns the networking actors, the normalized caches and
@@ -51,6 +52,9 @@ final class AppState {
     // UI toggles
     var showMemberList = true
     var showQuickSwitcher = false
+    var showKeybinds = false
+    /// Whether the app is the active (focused) application — gates notifications.
+    var isWindowActive = true
     var scrollToMessageID: Snowflake?
     /// Briefly flashed message after a jump (pins / replies / search results).
     var highlightedMessageID: Snowflake?
@@ -136,8 +140,14 @@ final class AppState {
             return
         }
         hasBootstrapped = true
+        loadPrefs()
+        startAutosave()
+        observeAppActivation()
         startEventPump()
         NotificationService.shared.requestAuthorization()
+        NotificationService.shared.onOpen = { [weak self] channelID, messageID in
+            Task { @MainActor in await self?.openFromNotification(channelID, messageID) }
+        }
         // Diagnostic override: drive the real app with a token from the environment
         // (used to reproduce gateway issues headlessly). Remove once stable.
         if let envToken = ProcessInfo.processInfo.environment["MACCORD_TOKEN"],
@@ -542,6 +552,7 @@ final class AppState {
     func markReadLocally(channelID: Snowflake, upTo messageID: Snowflake, ackServer: Bool) {
         readState.markRead(channelID: channelID, upTo: messageID)
         if selectedChannelID == channelID { unreadBoundaries[channelID] = nil }
+        updateDockBadge()
         guard ackServer, !isBotAccount else { return }
         pendingReadAcks[channelID]?.cancel()
         pendingReadAcks[channelID] = Task { [weak self] in
@@ -995,6 +1006,154 @@ final class AppState {
         // Our own roles (for hiding channels we can't view).
         if myMembers[guildID] == nil, let me = try? await rest.getCurrentMember(guildID: guildID) {
             myMembers[guildID] = me
+        }
+    }
+
+    // MARK: Platform integration
+
+    /// Reflect the unread mention count in the Dock badge.
+    func updateDockBadge() {
+        guard prefShowUnreadBadge else { NSApplication.shared.dockTile.badgeLabel = nil; return }
+        let count = readState.totalMentions
+        NSApplication.shared.dockTile.badgeLabel = count > 0 ? String(count) : nil
+    }
+
+    private func observeAppActivation() {
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.isWindowActive = true }
+        }
+        nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.isWindowActive = false }
+        }
+    }
+
+    /// Open a channel/message from a clicked notification.
+    func openFromNotification(_ channelID: Snowflake, _ messageID: Snowflake?) async {
+        selectedGuildID = channelsByID[channelID]?.guildID
+        await selectChannel(channelID)
+        if let messageID { jumpToMessage(messageID, in: channelID) }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    /// Alt+Up / Alt+Down: cycle through the current guild's text channels (or DMs).
+    func selectAdjacentChannel(_ delta: Int) {
+        let candidates: [Snowflake]
+        if let guildID = selectedGuildID, let store = guildStores[guildID] {
+            candidates = store.channels.values
+                .filter { $0.type.isTextLike }
+                .sorted { ($0.position ?? 0, $0.id.rawValue) < ($1.position ?? 0, $1.id.rawValue) }
+                .map(\.id)
+        } else {
+            candidates = dms.map(\.id)
+        }
+        guard !candidates.isEmpty else { return }
+        let idx = candidates.firstIndex { $0 == selectedChannelID } ?? 0
+        let next = (idx + delta + candidates.count) % candidates.count
+        Task { await selectChannel(candidates[next]) }
+    }
+
+    /// Upload one or more files to the current channel (drag-drop / paste).
+    func sendAttachments(_ files: [FilePart], content: String = "") async {
+        guard let channelID = selectedChannelID, !files.isEmpty else { return }
+        _ = try? await rest.createMessage(
+            channelID: channelID, content: content, messageReference: nil,
+            allowedMentions: .default, nonce: String(UInt64.random(in: 0...UInt64.max)), files: files
+        )
+    }
+
+    /// Close any open overlay (Esc).
+    func dismissOverlays() {
+        showQuickSwitcher = false
+        showKeybinds = false
+        showSearch = false
+    }
+
+    // MARK: Preferences persistence
+
+    private static let prefsKey = "maccord.prefs.v1"
+
+    private struct PersistedPrefs: Codable {
+        var enableNotifications = true
+        var compactMessages = false
+        var developerMode = true
+        var twentyFourHourTime = false
+        var animateEmoji = true
+        var showLinkPreview = true
+        var showEmbeds = true
+        var inlineMedia = true
+        var playNotificationSound = true
+        var showUnreadBadge = true
+        var messageFontScale = 1.0
+        var spellcheck = true
+        var shiftEnterNewline = false
+        var showActivity = true
+        var status = "online"
+        var customStatus = ""
+        var mutedChannels: [UInt64] = []
+        var mutedGuilds: [UInt64] = []
+        var notificationLevels: [String: String] = [:]
+        var drafts: [String: String] = [:]
+    }
+
+    func loadPrefs() {
+        guard let data = UserDefaults.standard.data(forKey: Self.prefsKey),
+              let p = try? JSONDecoder().decode(PersistedPrefs.self, from: data) else { return }
+        prefEnableNotifications = p.enableNotifications
+        prefCompactMessages = p.compactMessages
+        prefDeveloperMode = p.developerMode
+        prefTwentyFourHourTime = p.twentyFourHourTime
+        prefAnimateEmoji = p.animateEmoji
+        prefShowLinkPreview = p.showLinkPreview
+        prefShowEmbeds = p.showEmbeds
+        prefInlineMedia = p.inlineMedia
+        prefPlayNotificationSound = p.playNotificationSound
+        prefShowUnreadBadge = p.showUnreadBadge
+        prefMessageFontScale = p.messageFontScale
+        prefSpellcheck = p.spellcheck
+        prefShiftEnterNewline = p.shiftEnterNewline
+        prefShowActivity = p.showActivity
+        currentUserStatus = Status(rawValue: p.status) ?? .online
+        customStatusText = p.customStatus
+        mutedChannels = Set(p.mutedChannels.map { Snowflake($0) })
+        mutedGuilds = Set(p.mutedGuilds.map { Snowflake($0) })
+        guildNotificationLevels = Dictionary(uniqueKeysWithValues: p.notificationLevels.compactMap { key, value in
+            guard let id = Snowflake(string: key), let lvl = NotificationLevel(rawValue: value) else { return nil }
+            return (id, lvl)
+        })
+        drafts = Dictionary(uniqueKeysWithValues: p.drafts.compactMap { key, value in
+            guard let id = Snowflake(string: key) else { return nil }
+            return (id, value)
+        })
+    }
+
+    func savePrefs() {
+        let p = PersistedPrefs(
+            enableNotifications: prefEnableNotifications, compactMessages: prefCompactMessages,
+            developerMode: prefDeveloperMode, twentyFourHourTime: prefTwentyFourHourTime,
+            animateEmoji: prefAnimateEmoji, showLinkPreview: prefShowLinkPreview,
+            showEmbeds: prefShowEmbeds, inlineMedia: prefInlineMedia,
+            playNotificationSound: prefPlayNotificationSound, showUnreadBadge: prefShowUnreadBadge,
+            messageFontScale: prefMessageFontScale, spellcheck: prefSpellcheck,
+            shiftEnterNewline: prefShiftEnterNewline, showActivity: prefShowActivity,
+            status: currentUserStatus.rawValue, customStatus: customStatusText,
+            mutedChannels: mutedChannels.map(\.rawValue), mutedGuilds: mutedGuilds.map(\.rawValue),
+            notificationLevels: Dictionary(uniqueKeysWithValues:
+                guildNotificationLevels.map { ($0.key.description, $0.value.rawValue) }),
+            drafts: Dictionary(uniqueKeysWithValues: drafts.map { ($0.key.description, $0.value) })
+        )
+        if let data = try? JSONEncoder().encode(p) {
+            UserDefaults.standard.set(data, forKey: Self.prefsKey)
+        }
+    }
+
+    private func startAutosave() {
+        Task { [weak self] in
+            while true {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard let self else { break }
+                self.savePrefs()
+            }
         }
     }
 

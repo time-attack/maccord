@@ -23,6 +23,12 @@ struct MaccordApp: App {
                     .keyboardShortcut("k", modifiers: .command)
                 Button("Toggle Member List") { app.showMemberList.toggle() }
                     .keyboardShortcut("u", modifiers: .command)
+                Button("Previous Channel") { app.selectAdjacentChannel(-1) }
+                    .keyboardShortcut(.upArrow, modifiers: .option)
+                Button("Next Channel") { app.selectAdjacentChannel(1) }
+                    .keyboardShortcut(.downArrow, modifiers: .option)
+                Button("Keyboard Shortcuts") { app.showKeybinds.toggle() }
+                    .keyboardShortcut("/", modifiers: .command)
             }
             CommandGroup(after: .textEditing) {
                 Button("Increase Text Size") { app.adjustChatZoom(delta: 0.05) }

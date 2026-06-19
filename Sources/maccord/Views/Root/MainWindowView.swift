@@ -71,6 +71,12 @@ struct MainWindowView: View {
         )) {
             SearchPanelView(seed: app.searchSeed)
         }
+        .sheet(isPresented: Binding(
+            get: { app.showKeybinds },
+            set: { app.showKeybinds = $0 }
+        )) {
+            KeybindsHelpView()
+        }
         .animation(.easeInOut(duration: 0.2), value: app.showMemberList)
         .animation(.easeOut(duration: 0.12), value: app.showQuickSwitcher)
     }

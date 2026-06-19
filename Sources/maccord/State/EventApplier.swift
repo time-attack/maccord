@@ -258,19 +258,27 @@ enum EventApplier {
             let mentioned = message.mentionEveryone
                 || message.mentions.contains { $0.id == app.currentUser?.id }
             app.readState.bumpUnread(channelID: message.channelID, messageID: message.id, mentioned: mentioned)
+            app.updateDockBadge()
 
             // Native notification for direct mentions / DMs, honoring channel mute,
-            // server mute, and the server's notification level.
+            // server mute, the server's notification level, and whether we're
+            // already looking at that channel in the focused window.
             let isDM = app.channelsByID[message.channelID]?.type.isDM ?? false
             let muted = app.mutedChannels.contains(message.channelID)
             let guildMuted = message.guildID.map { app.mutedGuilds.contains($0) } ?? false
             let level = message.guildID.map { app.notificationLevel($0) } ?? .all
-            if app.prefEnableNotifications && !muted && !guildMuted && level != .nothing && (mentioned || isDM) {
+            let focusedHere = app.isWindowActive && app.selectedChannelID == message.channelID
+            if app.prefEnableNotifications && !muted && !guildMuted && level != .nothing
+                && (mentioned || isDM) && !focusedHere {
                 let server = message.guildID.flatMap { app.guildStores[$0]?.meta.name }
                 NotificationService.shared.notify(
                     title: message.author.displayName,
                     subtitle: server,
-                    body: message.content.isEmpty ? "Sent an attachment" : message.content
+                    body: message.content.isEmpty ? "Sent an attachment" : message.content,
+                    channelID: message.channelID,
+                    messageID: message.id,
+                    avatarURL: message.author.avatarURL(size: 128),
+                    playSound: app.prefPlayNotificationSound
                 )
             }
         }

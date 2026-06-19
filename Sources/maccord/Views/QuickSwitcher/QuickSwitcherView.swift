@@ -162,7 +162,14 @@ struct QuickSwitcherView: View {
     private var filtered: [Item] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         let all = buildIndex()
-        guard !q.isEmpty else { return Array(all.prefix(40)) }
+        guard !q.isEmpty else {
+            // Surface recently-visited channels/DMs first.
+            let recents = app.recentChannels.compactMap { cid in
+                all.first { $0.id == "ch-\(cid.rawValue)" || $0.id == "dm-\(cid.rawValue)" }
+            }
+            let recentIDs = Set(recents.map(\.id))
+            return Array((recents + all.filter { !recentIDs.contains($0.id) }).prefix(40))
+        }
         return all
             .filter { $0.title.lowercased().contains(q) || ($0.subtitle?.lowercased().contains(q) ?? false) }
             .prefix(40)

@@ -47,6 +47,9 @@ final class ReadStateStore {
 
     func mentionCount(_ channelID: Snowflake) -> Int { mentions[channelID] ?? 0 }
 
+    /// Total unread mentions across all channels (for the Dock badge).
+    var totalMentions: Int { mentions.values.reduce(0, +) }
+
     /// The id the user had read before now — used to draw the NEW divider.
     func ackedID(_ channelID: Snowflake) -> Snowflake? { acked[channelID] }
 

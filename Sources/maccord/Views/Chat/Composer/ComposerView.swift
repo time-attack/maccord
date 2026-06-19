@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import MaccordCore
 
 /// The message input bar at the bottom of the chat column.
@@ -6,6 +8,7 @@ struct ComposerView: View {
     @Environment(AppState.self) private var app
 
     @Binding var replyingTo: Message?
+    @State private var dropTargeted = false
 
     @State private var text = ""
     @State private var showEmoji = false
@@ -55,6 +58,18 @@ struct ComposerView: View {
         .padding(.bottom, 16)
         .padding(.top, 6)
         .background(DiscordColor.bgPrimary)
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: Layout.composerRadius, style: .continuous)
+                    .strokeBorder(DiscordColor.blurple, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                    .padding(.horizontal, Layout.composerHPadding)
+                    .allowsHitTesting(false)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            handleDrop(urls)
+            return !urls.isEmpty
+        } isTargeted: { dropTargeted = $0 }
         .onChange(of: text) { _, new in detectAutocomplete(in: new) }
         // Draft persistence: stash the current text when leaving a channel and
         // restore the destination channel's draft.
@@ -157,14 +172,19 @@ struct ComposerView: View {
 
     private var inputBar: some View {
         HStack(alignment: .center, spacing: 12) {
-            Button {} label: {
+            Button { pickFiles() } label: {
                 Image(systemName: "plus.circle.fill").font(.system(size: 20))
                     .foregroundStyle(DiscordColor.interactiveNormal)
             }.buttonStyle(.plain).help("Upload a file")
 
             ComposerTextEditor(text: $text, measuredHeight: $editorHeight, placeholder: placeholder,
                                spellcheck: app.prefSpellcheck,
-                               onSend: { send() }, onChange: { app.notifyTyping() })
+                               onSend: { send() }, onChange: { app.notifyTyping() },
+                               onPasteImage: { data, name in
+                                   Task { await app.sendAttachments([
+                                       FilePart(filename: name, contentType: "image/png", data: data)
+                                   ]) }
+                               })
                 .frame(height: editorHeight)
                 .disabled(!canSend)
 
@@ -229,6 +249,28 @@ struct ComposerView: View {
             return "Message #\(channel.displayName(currentUserID: app.currentUser?.id))"
         }
         return "Message"
+    }
+
+    private func pickFiles() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK { handleDrop(panel.urls) }
+    }
+
+    private func handleDrop(_ urls: [URL]) {
+        let parts: [FilePart] = urls.compactMap { url in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return FilePart(filename: url.lastPathComponent, contentType: mime(for: url), data: data)
+        }
+        guard !parts.isEmpty else { return }
+        Task { await app.sendAttachments(parts) }
+    }
+
+    private func mime(for url: URL) -> String {
+        if let type = UTType(filenameExtension: url.pathExtension), let m = type.preferredMIMEType { return m }
+        return "application/octet-stream"
     }
 
     private func send() {
