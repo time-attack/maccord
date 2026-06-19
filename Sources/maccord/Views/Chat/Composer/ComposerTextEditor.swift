@@ -9,6 +9,7 @@ struct ComposerTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var measuredHeight: CGFloat
     var placeholder: String
+    var spellcheck: Bool = true
     var onSend: () -> Void
     var onChange: () -> Void
 
@@ -32,6 +33,8 @@ struct ComposerTextEditor: NSViewRepresentable {
         textView.backgroundColor = .clear
         textView.isRichText = false
         textView.allowsUndo = true
+        textView.isContinuousSpellCheckingEnabled = spellcheck
+        textView.isAutomaticSpellingCorrectionEnabled = spellcheck
         textView.textContainerInset = NSSize(width: 0, height: 1)
         textView.textContainer?.lineFragmentPadding = 0
         textView.isVerticallyResizable = true
@@ -57,6 +60,8 @@ struct ComposerTextEditor: NSViewRepresentable {
         }
         textView.placeholder = placeholder
         textView.textColor = NSColor(DiscordColor.textNormal)
+        textView.isContinuousSpellCheckingEnabled = spellcheck
+        textView.isAutomaticSpellingCorrectionEnabled = spellcheck
     }
 
     @MainActor
@@ -104,9 +109,39 @@ struct ComposerTextEditor: NSViewRepresentable {
     }
 }
 
-/// NSTextView that paints placeholder text when empty.
+/// NSTextView that paints placeholder text when empty and wraps the selection in
+/// markdown markers for Cmd+B/I/U (Discord's composer formatting shortcuts).
 final class PlaceholderTextView: NSTextView {
     var placeholder: String = ""
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           let chars = event.charactersIgnoringModifiers {
+            switch chars {
+            case "b": wrapSelection(with: "**"); return true
+            case "i": wrapSelection(with: "*"); return true
+            case "u": wrapSelection(with: "__"); return true
+            default: break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    /// Wrap the current selection (or insertion point) in `marker` on each side.
+    private func wrapSelection(with marker: String) {
+        let range = selectedRange()
+        let selected = (string as NSString).substring(with: range)
+        let replacement = marker + selected + marker
+        guard shouldChangeText(in: range, replacementString: replacement) else { return }
+        replaceCharacters(in: range, with: replacement)
+        didChangeText()
+        let markerLen = (marker as NSString).length
+        if selected.isEmpty {
+            setSelectedRange(NSRange(location: range.location + markerLen, length: 0))
+        } else {
+            setSelectedRange(NSRange(location: range.location + markerLen, length: (selected as NSString).length))
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

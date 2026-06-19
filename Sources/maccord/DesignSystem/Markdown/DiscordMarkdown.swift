@@ -47,6 +47,7 @@ enum DiscordMarkdown {
     private static let timestampRegex = try! NSRegularExpression(pattern: "<t:(\\d+)(?::([tTdDfFR]))?>")
     private static let urlRegex = try! NSRegularExpression(pattern: "https?://[^\\s<>\\)]+")
     private static let everyoneRegex = try! NSRegularExpression(pattern: "@(everyone|here)")
+    private static let maskedLinkRegex = try! NSRegularExpression(pattern: "\\[([^\\]]+)\\]\\((https?://[^)\\s]+)\\)")
 
     private static let placeholder = "\u{FFFC}"
 
@@ -94,6 +95,16 @@ enum DiscordMarkdown {
         }
         collect(everyoneRegex) { m, ns in
             mentionFragment(ns.substring(with: m.range), isSelf: true)
+        }
+        // Masked links [label](url) — collected before bare URLs so the inner URL
+        // (which sits inside the kept range) is dropped by overlap resolution.
+        collect(maskedLinkRegex) { m, ns in
+            let label = ns.substring(with: m.range(at: 1))
+            let urlStr = ns.substring(with: m.range(at: 2))
+            var frag = AttributedString(label)
+            frag.foregroundColor = DiscordColor.linkBlue
+            if let url = URL(string: urlStr) { frag.link = url }
+            return frag
         }
         collect(urlRegex) { m, ns in
             let urlStr = ns.substring(with: m.range)

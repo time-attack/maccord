@@ -84,6 +84,7 @@ struct MessageRowView: View {
     private var contextMenu: some View {
         Button { Task { await quickReact() } } label: { Label("Add Reaction", systemImage: "face.smiling") }
         Button { onReply(message) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+        Button { app.forwarding = message } label: { Label("Forward", systemImage: "arrowshape.turn.up.forward") }
         if isOwnMessage {
             Button { beginEditing() } label: { Label("Edit Message", systemImage: "pencil") }
         }

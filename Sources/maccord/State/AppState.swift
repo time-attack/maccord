@@ -58,6 +58,13 @@ final class AppState {
     var nsfwAcknowledged: Set<Snowflake> = []
     var channelMuteUntil: [Snowflake: Date] = [:]
     var customStatusText = ""
+    /// A message queued for forwarding; the composer shows a forward bar and the
+    /// next send posts it (plus any typed note) to the current channel.
+    var forwarding: Message?
+    /// Per-channel composer drafts, restored when you return to a channel.
+    var drafts: [Snowflake: String] = [:]
+    /// Most-recently-opened channels (newest first), for the quick switcher.
+    var recentChannels: [Snowflake] = []
 
     // User preferences (Settings).
     var prefEnableNotifications = true
@@ -420,6 +427,9 @@ final class AppState {
 
     func selectChannel(_ channelID: Snowflake) async {
         selectedChannelID = channelID
+        recentChannels.removeAll { $0 == channelID }
+        recentChannels.insert(channelID, at: 0)
+        if recentChannels.count > 8 { recentChannels.removeLast(recentChannels.count - 8) }
         if let guildID = selectedGuildID {
             lastChannelByGuild[guildID] = channelID
             // Ensure roles + our own member (for channel visibility) are loaded,
@@ -497,7 +507,8 @@ final class AppState {
 
     // MARK: Actions
 
-    func sendMessage(content: String, replyingTo reference: MessageReference? = nil) async {
+    func sendMessage(content: String, replyingTo reference: MessageReference? = nil,
+                     allowedMentions: AllowedMentions? = nil) async {
         guard let channelID = selectedChannelID,
               let user = currentUser,
               !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -521,7 +532,7 @@ final class AppState {
                 channelID: channelID,
                 content: content,
                 messageReference: reference,
-                allowedMentions: reference == nil ? .default : .default,
+                allowedMentions: allowedMentions ?? .default,
                 nonce: nonce
             )
             lastSendAt[channelID] = Date()
@@ -529,6 +540,19 @@ final class AppState {
         } catch {
             store.markFailed(nonce: nonce)
         }
+    }
+
+    /// Forward a message to a channel (optionally with an accompanying note).
+    func forwardMessage(_ message: Message, to channelID: Snowflake, note: String) async {
+        let ref = MessageReference.forward(
+            messageID: message.id, channelID: message.channelID, guildID: message.guildID
+        )
+        let nonce = String(UInt64.random(in: 0...UInt64.max))
+        _ = try? await rest.createMessage(
+            channelID: channelID, content: note, messageReference: ref,
+            allowedMentions: .default, nonce: nonce
+        )
+        forwarding = nil
     }
 
     func toggleReaction(messageID: Snowflake, emoji: Emoji) async {

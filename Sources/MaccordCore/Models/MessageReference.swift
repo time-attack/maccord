@@ -31,6 +31,14 @@ public struct MessageReference: Codable, Hashable, Sendable {
         MessageReference(type: 0, messageID: messageID, channelID: channelID,
                          guildID: guildID, failIfNotExists: failIfNotExists)
     }
+
+    /// A forward reference (type 1) — the target channel posts a snapshot of the
+    /// source message.
+    public static func forward(messageID: Snowflake, channelID: Snowflake,
+                               guildID: Snowflake? = nil) -> MessageReference {
+        MessageReference(type: 1, messageID: messageID, channelID: channelID,
+                         guildID: guildID, failIfNotExists: false)
+    }
 }
 
 /// Controls which mentions in a message actually ping.
