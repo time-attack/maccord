@@ -185,6 +185,8 @@ enum EventApplier {
         maybeAutoSelect(app)
         if !app.isBotAccount {
             Task { await app.refreshRelationships() }
+            // Preload other guilds' channels (complete quick switcher) + history.
+            app.startBackgroundPreloading()
         }
     }
 

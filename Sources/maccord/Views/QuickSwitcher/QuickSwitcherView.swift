@@ -172,8 +172,18 @@ struct QuickSwitcherView: View {
         }
         return all
             .filter { $0.title.lowercased().contains(q) || ($0.subtitle?.lowercased().contains(q) ?? false) }
-            .prefix(40)
+            .sorted { rank($0, q) < rank($1, q) }
+            .prefix(50)
             .map { $0 }
+    }
+
+    /// Rank exact/prefix title matches above substring and subtitle-only matches.
+    private func rank(_ item: Item, _ q: String) -> Int {
+        let t = item.title.lowercased()
+        if t == q { return 0 }
+        if t.hasPrefix(q) { return 1 }
+        if t.contains(q) { return 2 }
+        return 3
     }
 
     private func buildIndex() -> [Item] {
@@ -181,12 +191,13 @@ struct QuickSwitcherView: View {
         for guildID in app.guildOrder {
             guard let store = app.guildStores[guildID] else { continue }
             let guildName = store.meta.name
-            for channel in store.channels.values where channel.type.isTextLike || channel.type.isVoice {
+            for channel in store.channels.values
+                where channel.type.isTextLike || channel.type.isVoice || channel.type.isThread {
                 all.append(Item(
                     id: "ch-\(channel.id.rawValue)",
                     kind: channel.type.isVoice ? .voice : .channel,
                     title: channel.name ?? "channel",
-                    subtitle: guildName,
+                    subtitle: channel.type.isThread ? "\(guildName) · thread" : guildName,
                     iconURL: nil, monogram: nil,
                     go: { app.selectedGuildID = guildID; Task { await app.selectChannel(channel.id) } }
                 ))

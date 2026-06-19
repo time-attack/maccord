@@ -11,6 +11,9 @@ struct MessageListView: View {
     var onReply: (Message) -> Void = { _ in }
 
     @State private var scrolledUp = false
+    /// True while a jump-to-message is settling, so auto-scroll-to-bottom and
+    /// load-older don't fight the jump.
+    @State private var jumpActive = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -45,8 +48,9 @@ struct MessageListView: View {
                 await store.loadInitialIfNeeded()
             }
             .onChange(of: store.messages.last?.id) { _, _ in
-                // Keep pinned to newest as fresh messages arrive (unless reading up).
-                if !scrolledUp { proxy.scrollTo(Self.bottomAnchor, anchor: .bottom) }
+                // Keep pinned to newest as fresh messages arrive (unless reading up
+                // or in the middle of a jump).
+                if !scrolledUp && !jumpActive { proxy.scrollTo(Self.bottomAnchor, anchor: .bottom) }
             }
             .onChange(of: scrolledUp) { _, up in
                 if !up { app.acknowledgeVisibleRead(in: store.channelID) }
@@ -65,15 +69,25 @@ struct MessageListView: View {
     /// first (a pin/search jump may still be merging a fetched `around` window).
     @MainActor
     private func scrollToTarget(_ target: Snowflake, proxy: ScrollViewProxy) async {
-        for _ in 0..<12 {
+        jumpActive = true
+        // Wait for the target row to exist (loadAround may still be merging).
+        for _ in 0..<20 {
             if store.messages.contains(where: { $0.id == target }) { break }
-            try? await Task.sleep(nanoseconds: 60_000_000)
+            try? await Task.sleep(nanoseconds: 50_000_000)
         }
-        try? await Task.sleep(nanoseconds: 60_000_000)  // let the LazyVStack lay out
-        withAnimation(.easeOut(duration: 0.25)) {
-            proxy.scrollTo("msg-\(target.rawValue)", anchor: .center)
+        // A LazyVStack mis-estimates the offset of a far off-screen row on the
+        // first scroll, so re-scroll a few times as the rows materialize — this is
+        // what makes the jump land squarely on (and fully reach) the target.
+        for _ in 0..<5 {
+            try? await Task.sleep(nanoseconds: 70_000_000)
+            withAnimation(.easeOut(duration: 0.18)) {
+                proxy.scrollTo("msg-\(target.rawValue)", anchor: .center)
+            }
         }
         app.scrollToMessageID = nil
+        // Hold the guard briefly so auto-bottom / load-older don't undo the scroll.
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        jumpActive = false
     }
 
     private func jumpToPresent(_ proxy: ScrollViewProxy) -> some View {
@@ -120,10 +134,12 @@ struct MessageListView: View {
             }
             .padding(.vertical, 12)
         } else if store.hasMoreBefore {
-            // Invisible sentinel; loading older history when it scrolls into view.
+            // Invisible sentinel; loading older history when it scrolls into view —
+            // suppressed during a jump so the target doesn't get shoved off-screen.
             Color.clear
                 .frame(height: 1)
                 .onAppear {
+                    guard !jumpActive else { return }
                     Task { await store.loadOlder() }
                 }
         } else {

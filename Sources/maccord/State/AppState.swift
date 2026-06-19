@@ -537,7 +537,7 @@ final class AppState {
     func selectGuild(_ guildID: Snowflake?) {
         selectedGuildID = guildID
         if let guildID, let store = guildStores[guildID] {
-            Task { await hydrateGuildIfNeeded(guildID) }
+            preloadGuild(guildID)
             let target = lastChannelByGuild[guildID] ?? store.defaultChannel?.id
             if let target { Task { await selectChannel(target) } }
             else { selectedChannelID = nil }
@@ -1047,6 +1047,75 @@ final class AppState {
         // Our own roles (for hiding channels we can't view).
         if myMembers[guildID] == nil, let me = try? await rest.getCurrentMember(guildID: guildID) {
             myMembers[guildID] = me
+        }
+    }
+
+    // MARK: Background hydration + preloading
+
+    private var hydrationTask: Task<Void, Never>?
+
+    /// After login, fetch every guild's channel list (so the quick switcher is
+    /// complete and switches are instant) and preload message history for the
+    /// most relevant channels — all throttled to 10 in flight.
+    func startBackgroundPreloading() {
+        guard !isBotAccount else { return }   // bots already get guilds via GUILD_CREATE
+        hydrationTask?.cancel()
+        hydrationTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runThrottled(self.guildOrder, limit: 10) { [weak self] gid in
+                await self?.hydrateGuildIfNeeded(gid)
+            }
+            await self.preloadPriorityChannels()
+        }
+    }
+
+    /// Preload initial history for unread channels, the current guild, and DMs.
+    private func preloadPriorityChannels() async {
+        var targets: [Snowflake] = []
+        var seen = Set<Snowflake>()
+        func add(_ id: Snowflake) { if seen.insert(id).inserted { targets.append(id) } }
+
+        for store in guildStores.values {
+            for c in store.channels.values where c.type.isTextLike && readState.isUnread(c.id) { add(c.id) }
+        }
+        if let gid = selectedGuildID, let store = guildStores[gid] {
+            for c in store.channels.values where c.type.isTextLike { add(c.id) }
+        }
+        for dm in dms { add(dm.id) }
+
+        await runThrottled(Array(targets.prefix(60)), limit: 10) { [weak self] id in
+            await self?.messageStore(for: id).loadInitialIfNeeded()
+        }
+    }
+
+    /// Preload the remaining text channels of a guild when you open it, so moving
+    /// between channels in that server is instant. Throttled to 10 in flight.
+    func preloadGuild(_ guildID: Snowflake) {
+        Task { [weak self] in
+            guard let self else { return }
+            await self.hydrateGuildIfNeeded(guildID)
+            let ids = self.guildStores[guildID]?.channels.values
+                .filter { $0.type.isTextLike }
+                .map(\.id) ?? []
+            await self.runThrottled(Array(ids.prefix(30)), limit: 10) { [weak self] id in
+                await self?.messageStore(for: id).loadInitialIfNeeded()
+            }
+        }
+    }
+
+    /// Run `body` over `items` with at most `limit` tasks in flight at once.
+    private func runThrottled<T: Sendable>(_ items: [T], limit: Int,
+                                           _ body: @escaping @Sendable (T) async -> Void) async {
+        guard !items.isEmpty else { return }
+        await withTaskGroup(of: Void.self) { group in
+            var index = 0
+            func addNext() {
+                guard index < items.count else { return }
+                let item = items[index]; index += 1
+                group.addTask { await body(item) }
+            }
+            for _ in 0..<min(limit, items.count) { addNext() }
+            for await _ in group { addNext() }
         }
     }
 
