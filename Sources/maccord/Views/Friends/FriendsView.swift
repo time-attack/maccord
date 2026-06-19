@@ -11,7 +11,7 @@ struct FriendsView: View {
     @State private var isAdding = false
 
     enum Tab: String, CaseIterable, Identifiable {
-        case online = "Online", all = "All", pending = "Pending", add = "Add Friend"
+        case online = "Online", all = "All", pending = "Pending", blocked = "Blocked", add = "Add Friend"
         var id: String { rawValue }
     }
 
@@ -27,6 +27,7 @@ struct FriendsView: View {
                     case .online: friendList(app.onlineFriends, empty: "No friends online")
                     case .all: friendList(app.friends, empty: "You don't have any friends yet")
                     case .pending: pendingList
+                    case .blocked: blockedList
                     case .add: addFriendForm
                     }
                 }
@@ -102,6 +103,32 @@ struct FriendsView: View {
             }
             if app.incomingFriendRequests.isEmpty && app.outgoingFriendRequests.isEmpty {
                 Text("No pending friend requests").font(.system(size: 14)).foregroundStyle(DiscordColor.textMuted)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var blockedList: some View {
+        if app.blockedUsers.isEmpty {
+            Text("You haven't blocked anyone")
+                .font(.system(size: 14)).foregroundStyle(DiscordColor.textMuted).padding(.top, 8)
+        } else {
+            ForEach(app.blockedUsers) { rel in
+                if let user = rel.user {
+                    HStack(spacing: 12) {
+                        AvatarView(url: user.avatarURL(size: 80), fallbackText: user.displayName, size: 36)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(user.displayName).font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(DiscordColor.headerPrimary)
+                            Text(user.handle).font(.system(size: 12)).foregroundStyle(DiscordColor.textMuted)
+                        }
+                        Spacer()
+                        Button("Unblock") { Task { await app.unblockUser(user.id) } }
+                            .buttonStyle(.bordered)
+                    }
+                    .padding(10)
+                    .background(DiscordColor.bgSecondaryAlt, in: .rect(cornerRadius: 8))
+                }
             }
         }
     }

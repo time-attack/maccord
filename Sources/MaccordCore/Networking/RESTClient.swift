@@ -208,6 +208,18 @@ public actor RESTClient {
         return try decode(R.self, from: data)
     }
 
+    /// PUT that ignores the response body (e.g. 204 routes like bans / recipients).
+    func putNoContent(_ req: RESTRequest, jsonBody: Encodable?) async throws {
+        let body = try encodeBody(jsonBody)
+        _ = try await send(req, body: body, contentType: body == nil ? nil : "application/json")
+    }
+
+    /// PATCH that ignores the response body.
+    func patchNoContent(_ req: RESTRequest, jsonBody: Encodable?) async throws {
+        let body = try encodeBody(jsonBody)
+        _ = try await send(req, body: body, contentType: body == nil ? nil : "application/json")
+    }
+
     func postMultipart<R: Decodable>(
         _ req: RESTRequest,
         payloadJSON: Data,

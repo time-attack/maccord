@@ -36,6 +36,10 @@ struct DMRowView: View {
         return "\(count) Member\(count == 1 ? "" : "s")"
     }
 
+    private var otherRecipient: User? {
+        channel.recipients?.first(where: { $0.id != currentUserID })
+    }
+
     private var background: Color {
         if isSelected { return DiscordColor.channelSelected }
         if isHovering { return DiscordColor.channelHover }
@@ -90,6 +94,38 @@ struct DMRowView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .overlay(alignment: .trailing) {
+            if isHovering {
+                Button { Task { await app.closeDM(channel.id) } } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(DiscordColor.interactiveNormal)
+                        .padding(6)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .help(channel.type == .groupDM ? "Leave Group" : "Close DM")
+                .padding(.trailing, 12)
+            }
+        }
+        .contextMenu {
+            Button { Task { await app.markChannelRead(channel.id) } } label: {
+                Label("Mark As Read", systemImage: "envelope.open")
+            }
+            if channel.type == .dm, let other = otherRecipient {
+                Divider()
+                if app.isBlocked(other.id) {
+                    Button { Task { await app.unblockUser(other.id) } } label: { Label("Unblock", systemImage: "hand.raised.slash") }
+                } else {
+                    Button(role: .destructive) { Task { await app.blockUser(other.id) } } label: { Label("Block", systemImage: "hand.raised") }
+                }
+            }
+            Divider()
+            Button { Clipboard.copy(channel.id.description) } label: { Label("Copy Channel ID", systemImage: "number") }
+            Button(role: .destructive) { Task { await app.closeDM(channel.id) } } label: {
+                Label(channel.type == .groupDM ? "Leave Group" : "Close DM", systemImage: "xmark")
+            }
+        }
         .padding(.horizontal, 8)
     }
 }

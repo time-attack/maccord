@@ -410,6 +410,69 @@ final class AppState {
         relationships[userID]?.type == .blocked
     }
 
+    var blockedUsers: [Relationship] {
+        relationships.values.filter { $0.type == .blocked }.sorted {
+            ($0.user?.displayName ?? "") < ($1.user?.displayName ?? "")
+        }
+    }
+
+    // MARK: Moderation
+
+    func canKick(in guildID: Snowflake) -> Bool { hasGuildPerm(guildID, [.kickMembers]) }
+    func canBan(in guildID: Snowflake) -> Bool { hasGuildPerm(guildID, [.banMembers]) }
+    func canTimeout(in guildID: Snowflake) -> Bool { hasGuildPerm(guildID, [.moderateMembers]) }
+    func canManageRoles(in guildID: Snowflake) -> Bool { hasGuildPerm(guildID, [.manageRoles]) }
+
+    /// True when the current user owns the guild, is an admin, or holds any of the
+    /// given guild-level permissions.
+    private func hasGuildPerm(_ guildID: Snowflake, _ any: [Permissions]) -> Bool {
+        if guildStores[guildID]?.meta.ownerID == currentUser?.id { return true }
+        guard let store = guildStores[guildID], let me = currentUser?.id,
+              let roleIDs = myRoleIDs(in: guildID) else { return false }
+        let probe = store.defaultChannel ?? store.channels.values.first { $0.type.isTextLike }
+        guard let channel = probe else { return false }
+        let perms = store.effectivePermissions(channel, myRoleIDs: roleIDs, myUserID: me)
+        if perms.contains(.administrator) { return true }
+        return any.contains { perms.contains($0) }
+    }
+
+    func kickMember(_ userID: Snowflake, in guildID: Snowflake) async {
+        try? await rest.kickMember(guildID: guildID, userID: userID)
+    }
+    func banMember(_ userID: Snowflake, in guildID: Snowflake, deleteMessageDays: Int = 0) async {
+        try? await rest.banMember(guildID: guildID, userID: userID,
+                                  deleteMessageSeconds: deleteMessageDays * 86_400)
+    }
+    func unbanMember(_ userID: Snowflake, in guildID: Snowflake) async {
+        try? await rest.unbanMember(guildID: guildID, userID: userID)
+    }
+    func timeoutMember(_ userID: Snowflake, in guildID: Snowflake, minutes: Int) async {
+        let until = minutes > 0 ? Date().addingTimeInterval(TimeInterval(minutes) * 60) : nil
+        try? await rest.timeoutMember(guildID: guildID, userID: userID, until: until)
+    }
+    func bans(in guildID: Snowflake) async -> [GuildBan] {
+        (try? await rest.getBans(guildID: guildID)) ?? []
+    }
+
+    // MARK: Group DMs
+
+    func createGroupDM(with userIDs: [Snowflake]) async {
+        guard !userIDs.isEmpty, let dm = try? await rest.createGroupDM(recipientIDs: userIDs) else { return }
+        channelsByID[dm.id] = dm
+        if !dms.contains(where: { $0.id == dm.id }) { dms.insert(dm, at: 0) }
+        for r in dm.recipients ?? [] { usersByID[r.id] = r }
+        selectGuild(nil)
+        await selectChannel(dm.id)
+    }
+
+    /// Close a DM or leave a group DM.
+    func closeDM(_ channelID: Snowflake) async {
+        try? await rest.closeChannel(channelID)
+        dms.removeAll { $0.id == channelID }
+        channelsByID[channelID] = nil
+        if selectedChannelID == channelID { selectedChannelID = nil }
+    }
+
     func profileLink(for userID: Snowflake) -> String {
         "https://discord.com/users/\(userID.rawValue)"
     }

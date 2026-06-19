@@ -108,6 +108,7 @@ public struct Permissions: OptionSet, Codable, Hashable, Sendable {
     public static let manageEmojis          = Permissions(rawValue: 1 << 30)
     public static let useApplicationCommands = Permissions(rawValue: 1 << 31)
     public static let sendMessagesInThreads = Permissions(rawValue: 1 << 38)
+    public static let moderateMembers       = Permissions(rawValue: 1 << 40)
 
     public var isAdministrator: Bool { contains(.administrator) }
 }

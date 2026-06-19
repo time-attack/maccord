@@ -119,9 +119,51 @@ struct MemberRowView: View {
         }
         .contextMenu {
             Button { showProfile = true } label: { Label("View Profile", systemImage: "person.crop.circle") }
+            if !isSelf {
+                Button { Task { await app.openDM(with: entry.member.id) } } label: { Label("Message", systemImage: "bubble.left") }
+            }
             Button { Clipboard.copy("<@\(entry.member.id.rawValue)>") } label: { Label("Copy Mention", systemImage: "at") }
+            if let gid = app.selectedGuildID, !isSelf { moderationMenu(gid) }
             Divider()
+            if !isSelf {
+                if app.isBlocked(entry.member.id) {
+                    Button { Task { await app.unblockUser(entry.member.id) } } label: { Label("Unblock", systemImage: "hand.raised.slash") }
+                } else {
+                    Button(role: .destructive) { Task { await app.blockUser(entry.member.id) } } label: { Label("Block", systemImage: "hand.raised") }
+                }
+            }
             Button { Clipboard.copy(entry.member.id.description) } label: { Label("Copy User ID", systemImage: "number") }
+        }
+    }
+
+    private var isSelf: Bool { entry.member.id == app.currentUser?.id }
+
+    /// Kick / Ban / Timeout actions, shown only when the user has the permission.
+    @ViewBuilder
+    private func moderationMenu(_ guildID: Snowflake) -> some View {
+        let uid = entry.member.id
+        if app.canTimeout(in: guildID) || app.canKick(in: guildID) || app.canBan(in: guildID) {
+            Divider()
+            if app.canTimeout(in: guildID) {
+                Menu {
+                    Button("60 seconds") { Task { await app.timeoutMember(uid, in: guildID, minutes: 1) } }
+                    Button("5 minutes") { Task { await app.timeoutMember(uid, in: guildID, minutes: 5) } }
+                    Button("1 hour") { Task { await app.timeoutMember(uid, in: guildID, minutes: 60) } }
+                    Button("1 day") { Task { await app.timeoutMember(uid, in: guildID, minutes: 1_440) } }
+                    Divider()
+                    Button("Remove Timeout") { Task { await app.timeoutMember(uid, in: guildID, minutes: 0) } }
+                } label: { Label("Timeout", systemImage: "clock.badge.exclamationmark") }
+            }
+            if app.canKick(in: guildID) {
+                Button(role: .destructive) { Task { await app.kickMember(uid, in: guildID) } } label: {
+                    Label("Kick", systemImage: "door.left.hand.open")
+                }
+            }
+            if app.canBan(in: guildID) {
+                Button(role: .destructive) { Task { await app.banMember(uid, in: guildID) } } label: {
+                    Label("Ban", systemImage: "hammer")
+                }
+            }
         }
     }
 
