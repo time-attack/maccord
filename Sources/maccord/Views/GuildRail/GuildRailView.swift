@@ -5,6 +5,7 @@ import MaccordCore
 /// Home/DM button, a divider, and one icon per guild on the tertiary background.
 public struct GuildRailView: View {
     @Environment(AppState.self) private var app
+    @State private var showJoin = false
 
     public init() {}
 
@@ -31,6 +32,8 @@ public struct GuildRailView: View {
                         }
                     }
                 }
+
+                addServerButton
             }
             // Top inset clears the traffic-light controls (the window uses a hidden
             // title bar for an immersive, Discord-like look).
@@ -40,6 +43,21 @@ public struct GuildRailView: View {
         .frame(width: Layout.guildRailWidth)
         .frame(maxHeight: .infinity)
         .background(DiscordColor.panelRail)
+        .sheet(isPresented: $showJoin) { JoinServerView() }
+    }
+
+    private var addServerButton: some View {
+        Button { showJoin = true } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(DiscordColor.green)
+                .frame(width: Layout.serverIconSize, height: Layout.serverIconSize)
+                .background(DiscordColor.bgSecondaryAlt, in: .circle)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .help("Add a Server")
+        .padding(.top, 4)
     }
 
     private var divider: some View {

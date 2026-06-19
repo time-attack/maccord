@@ -124,6 +124,21 @@ struct MemberRowView: View {
             }
             Button { Clipboard.copy("<@\(entry.member.id.rawValue)>") } label: { Label("Copy Mention", systemImage: "at") }
             if let gid = app.selectedGuildID, !isSelf { moderationMenu(gid) }
+            if let gid = app.selectedGuildID, !isSelf, app.canManageRoles(in: gid),
+               let store = app.selectedGuildStore {
+                Menu {
+                    ForEach(store.roleList.filter { $0.name != "@everyone" && !$0.managed }) { role in
+                        Button {
+                            Task {
+                                await app.toggleMemberRole(entry.member.id, role: role.id, in: gid,
+                                                           currentRoles: entry.member.roles)
+                            }
+                        } label: {
+                            Label(role.name, systemImage: entry.member.roles.contains(role.id) ? "checkmark" : "circle")
+                        }
+                    }
+                } label: { Label("Roles", systemImage: "tag") }
+            }
             Divider()
             if !isSelf {
                 if app.isBlocked(entry.member.id) {

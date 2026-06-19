@@ -464,6 +464,47 @@ final class AppState {
         (try? await rest.getBans(guildID: guildID)) ?? []
     }
 
+    /// Add or remove a role from a member (member context menu → Roles).
+    func toggleMemberRole(_ userID: Snowflake, role roleID: Snowflake,
+                          in guildID: Snowflake, currentRoles: [Snowflake]) async {
+        var roles = Set(currentRoles)
+        if roles.contains(roleID) { roles.remove(roleID) } else { roles.insert(roleID) }
+        try? await rest.modifyMemberRoles(guildID: guildID, userID: userID, roles: Array(roles))
+    }
+
+    // MARK: Invites
+
+    func createInvite(channelID: Snowflake, maxAgeSeconds: Int, maxUses: Int, temporary: Bool) async -> GuildInvite? {
+        try? await rest.createInvite(channelID: channelID, maxAgeSeconds: maxAgeSeconds,
+                                     maxUses: maxUses, temporary: temporary)
+    }
+
+    func guildInvites(_ guildID: Snowflake) async -> [GuildInvite] {
+        (try? await rest.getGuildInvites(guildID)) ?? []
+    }
+
+    func deleteInvite(_ code: String) async {
+        try? await rest.deleteInvite(code: code)
+    }
+
+    /// Join a server from an invite link or raw code. The new guild then arrives
+    /// over the gateway as a GUILD_CREATE.
+    @discardableResult
+    func acceptInvite(_ raw: String) async -> Bool {
+        let code = Self.inviteCode(from: raw)
+        guard !code.isEmpty else { return false }
+        return ((try? await rest.acceptInvite(code: code)) != nil)
+    }
+
+    /// Extract the invite code from a discord.gg / discord.com URL or raw code.
+    static func inviteCode(from raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: trimmed), let host = url.host, host.contains("discord") {
+            return url.lastPathComponent
+        }
+        return trimmed.split(separator: "/").last.map(String.init) ?? trimmed
+    }
+
     // MARK: Group DMs
 
     func createGroupDM(with userIDs: [Snowflake]) async {

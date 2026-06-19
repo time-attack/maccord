@@ -9,9 +9,16 @@ struct ServerSettingsView: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var tab: Tab = .overview
+    @State private var invites: [GuildInvite] = []
+    @State private var bans: [GuildBan] = []
+    @State private var inviteMaxAge = 86_400
+    @State private var inviteMaxUses = 0
+    @State private var loadingInvites = false
+    @State private var loadingBans = false
 
     enum Tab: String, CaseIterable, Identifiable {
-        case overview = "Overview", roles = "Roles", emoji = "Emoji", members = "Members"
+        case overview = "Overview", roles = "Roles", emoji = "Emoji",
+             members = "Members", invites = "Invites", bans = "Bans"
         var id: String { rawValue }
         var icon: String {
             switch self {
@@ -19,6 +26,8 @@ struct ServerSettingsView: View {
             case .roles: "at"
             case .emoji: "face.smiling.inverse"
             case .members: "person.2.fill"
+            case .invites: "link"
+            case .bans: "hammer.fill"
             }
         }
     }
@@ -103,6 +112,8 @@ struct ServerSettingsView: View {
                 case .roles: roles
                 case .emoji: emoji
                 case .members: members
+                case .invites: invitesView
+                case .bans: bansView
                 }
             }
             .padding(24)
@@ -198,6 +209,138 @@ struct ServerSettingsView: View {
             Text("Open the member list (⌘U) to browse members by role.")
                 .font(.system(size: 12)).foregroundStyle(DiscordColor.textMuted)
         }
+    }
+
+    // MARK: Invites
+
+    private var invitesView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            infoCard {
+                Text("Create Invite")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DiscordColor.headerPrimary)
+                HStack {
+                    Text("Expire after").font(.system(size: 13)).foregroundStyle(DiscordColor.textMuted)
+                    Spacer()
+                    Picker("", selection: $inviteMaxAge) {
+                        Text("30 minutes").tag(1_800)
+                        Text("1 hour").tag(3_600)
+                        Text("6 hours").tag(21_600)
+                        Text("1 day").tag(86_400)
+                        Text("7 days").tag(604_800)
+                        Text("Never").tag(0)
+                    }.labelsHidden().frame(width: 130)
+                }
+                HStack {
+                    Text("Max uses").font(.system(size: 13)).foregroundStyle(DiscordColor.textMuted)
+                    Spacer()
+                    Picker("", selection: $inviteMaxUses) {
+                        Text("No limit").tag(0)
+                        Text("1 use").tag(1)
+                        Text("5 uses").tag(5)
+                        Text("10 uses").tag(10)
+                        Text("25 uses").tag(25)
+                        Text("50 uses").tag(50)
+                    }.labelsHidden().frame(width: 130)
+                }
+                Button {
+                    Task {
+                        let channel = store?.defaultChannel
+                            ?? store?.channels.values.first(where: { $0.type.isTextLike })
+                        if let channel,
+                           let invite = await app.createInvite(channelID: channel.id,
+                                                               maxAgeSeconds: inviteMaxAge,
+                                                               maxUses: inviteMaxUses, temporary: false) {
+                            Clipboard.copy(invite.url)
+                            await loadInvites()
+                        }
+                    }
+                } label: {
+                    Label("Create & Copy Invite", systemImage: "link.badge.plus").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).tint(DiscordColor.blurple)
+            }
+
+            if loadingInvites {
+                ProgressView().controlSize(.small)
+            } else if invites.isEmpty {
+                empty("No active invites")
+            } else {
+                ForEach(invites) { invite in inviteRow(invite) }
+            }
+        }
+        .task { await loadInvites() }
+    }
+
+    private func inviteRow(_ invite: GuildInvite) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(invite.url).font(.system(size: 13, weight: .medium)).foregroundStyle(DiscordColor.linkBlue)
+                Text(inviteSubtitle(invite)).font(.system(size: 11)).foregroundStyle(DiscordColor.textMuted)
+            }
+            Spacer()
+            Button { Clipboard.copy(invite.url) } label: { Image(systemName: "doc.on.doc") }
+                .buttonStyle(.plain).help("Copy")
+            Button(role: .destructive) {
+                Task { await app.deleteInvite(invite.code); await loadInvites() }
+            } label: { Image(systemName: "trash") }
+                .buttonStyle(.plain).help("Revoke")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(DiscordColor.bgSecondaryAlt, in: .rect(cornerRadius: 8))
+    }
+
+    private func inviteSubtitle(_ i: GuildInvite) -> String {
+        var parts: [String] = []
+        if let inviter = i.inviter { parts.append("by \(inviter.displayName)") }
+        let uses = i.uses ?? 0
+        if let max = i.maxUses, max > 0 { parts.append("\(uses)/\(max) uses") } else { parts.append("\(uses) uses") }
+        if let exp = i.expiresAt { parts.append("expires \(exp.formatted(date: .abbreviated, time: .shortened))") }
+        else { parts.append("never expires") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func loadInvites() async {
+        loadingInvites = true
+        invites = await app.guildInvites(guildID)
+        loadingInvites = false
+    }
+
+    // MARK: Bans
+
+    private var bansView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if loadingBans {
+                ProgressView().controlSize(.small)
+            } else if bans.isEmpty {
+                empty("No bans")
+            } else {
+                ForEach(bans) { ban in
+                    HStack(spacing: 10) {
+                        AvatarView(url: ban.user.avatarURL(size: 48), fallbackText: ban.user.displayName, size: 32)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(ban.user.displayName).font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(DiscordColor.textNormal)
+                            Text(ban.reason ?? "No reason given").font(.system(size: 11))
+                                .foregroundStyle(DiscordColor.textMuted).lineLimit(1)
+                        }
+                        Spacer()
+                        Button("Unban") {
+                            Task { await app.unbanMember(ban.user.id, in: guildID); await loadBans() }
+                        }.buttonStyle(.bordered)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(DiscordColor.bgSecondaryAlt, in: .rect(cornerRadius: 8))
+                }
+            }
+        }
+        .task { await loadBans() }
+    }
+
+    private func loadBans() async {
+        loadingBans = true
+        bans = await app.bans(in: guildID)
+        loadingBans = false
     }
 
     // MARK: Bits
