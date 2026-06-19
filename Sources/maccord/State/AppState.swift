@@ -65,6 +65,14 @@ final class AppState {
     var drafts: [Snowflake: String] = [:]
     /// Most-recently-opened channels (newest first), for the quick switcher.
     var recentChannels: [Snowflake] = []
+    /// Most-recently-used emoji (newest first), for the picker's "Recent" tab.
+    var recentEmojis: [Emoji] = []
+
+    func recordRecentEmoji(_ emoji: Emoji) {
+        recentEmojis.removeAll { $0.reactionKey == emoji.reactionKey }
+        recentEmojis.insert(emoji, at: 0)
+        if recentEmojis.count > 36 { recentEmojis.removeLast(recentEmojis.count - 36) }
+    }
 
     // User preferences (Settings).
     var prefEnableNotifications = true
@@ -599,6 +607,17 @@ final class AppState {
 
     func loadPins(for channelID: Snowflake) async -> [Message] {
         (try? await rest.getPins(channelID: channelID)) ?? []
+    }
+
+    /// Who reacted to a message with a given emoji (reaction-details popover).
+    func reactionUsers(channelID: Snowflake, messageID: Snowflake, emoji: Emoji) async -> [User] {
+        (try? await rest.getReactionUsers(channelID: channelID, messageID: messageID,
+                                          emoji: emoji, limit: 100)) ?? []
+    }
+
+    /// Create an invite link for a specific channel (channel right-click → Invite).
+    func createChannelInvite(_ channelID: Snowflake) async -> String? {
+        try? await rest.createInvite(channelID: channelID)
     }
 
     /// A discord.com deep link to a message (for "Copy Message Link").

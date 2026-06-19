@@ -16,6 +16,26 @@ struct ChannelHeaderView: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // Thread breadcrumb: back to the parent channel.
+            if channel.type.isThread, let parentID = channel.parentID,
+               let parent = app.channelsByID[parentID] {
+                Button { Task { await app.selectChannel(parentID) } } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold))
+                        Text("#\(parent.name ?? "channel")")
+                            .font(DiscordFont.channelHeaderTitle)
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(DiscordColor.channelDefault)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .help("Back to #\(parent.name ?? "channel")")
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DiscordColor.channelIcon)
+            }
+
             Image(systemName: channelIcon)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(DiscordColor.channelIcon)

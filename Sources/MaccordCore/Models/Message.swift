@@ -89,6 +89,8 @@ public struct Message: Codable, Identifiable, Hashable, Sendable {
     public var isPending: Bool = false
     /// Set when a send failed.
     public var failedToSend: Bool = false
+    /// Set on MESSAGE_DELETE so the row shows a tombstone until the channel reloads.
+    public var isDeleted: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, author, member, content, timestamp, tts, mentions, attachments

@@ -109,7 +109,11 @@ final class MessageStore {
     }
 
     func delete(_ id: Snowflake) {
-        messages.removeAll { $0.id == id }
+        // Keep the message as a tombstone (grayed "message deleted") until the
+        // channel is reloaded, matching Discord's behavior.
+        if let idx = messages.firstIndex(where: { $0.id == id }) {
+            messages[idx].isDeleted = true
+        }
     }
 
     func clearReactions(messageID: Snowflake) {

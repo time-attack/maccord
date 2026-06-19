@@ -73,8 +73,15 @@ struct EmojiPickerView: View {
         .glassEffect(.regular.tint(DiscordColor.bgFloating.opacity(0.7)),
                      in: .rect(cornerRadius: 12, style: .continuous))
         .onAppear {
-            if allowedCustomEmoji.isEmpty { activeCategory = EmojiCatalog.categories.first?.id ?? "smileys" }
+            if !app.recentEmojis.isEmpty { activeCategory = "recent" }
+            else if allowedCustomEmoji.isEmpty { activeCategory = EmojiCatalog.categories.first?.id ?? "smileys" }
         }
+    }
+
+    /// Record the pick as "recently used" before forwarding to the caller.
+    private func pick(_ emoji: Emoji) {
+        app.recordRecentEmoji(emoji)
+        onPick(emoji)
     }
 
     private var searchBar: some View {
@@ -91,6 +98,9 @@ struct EmojiPickerView: View {
     private var categoryRail: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 4) {
+                if !app.recentEmojis.isEmpty {
+                    railButton(id: "recent", symbol: "clock")
+                }
                 if !allowedCustomEmoji.isEmpty {
                     railButton(id: "custom", symbol: "face.smiling.inverse")
                 }
@@ -124,6 +134,10 @@ struct EmojiPickerView: View {
                         ($0.emoji.name ?? "").lowercased().contains(query.lowercased())
                     }) { tagged in customCell(tagged.emoji, guildID: tagged.guildID) }
                     ForEach(EmojiCatalog.search(query)) { unicodeCell($0) }
+                } else if activeCategory == "recent" {
+                    ForEach(Array(app.recentEmojis.enumerated()), id: \.offset) { _, emoji in
+                        recentCell(emoji)
+                    }
                 } else if activeCategory == "custom" {
                     if allowedCustomEmoji.isEmpty {
                         Text("No custom emoji available")
@@ -144,7 +158,7 @@ struct EmojiPickerView: View {
 
     private func unicodeCell(_ entry: EmojiCatalog.Entry) -> some View {
         Button {
-            onPick(Emoji(name: entry.char))
+            pick(Emoji(name: entry.char))
         } label: {
             Text(entry.char).font(.system(size: 22))
                 .frame(width: 34, height: 34)
@@ -153,8 +167,26 @@ struct EmojiPickerView: View {
         .help(entry.name)
     }
 
+    /// A "recently used" cell handles both unicode and custom emoji.
+    @ViewBuilder
+    private func recentCell(_ emoji: Emoji) -> some View {
+        Button { pick(emoji) } label: {
+            if emoji.isCustom, let url = emoji.imageURL(size: 48) {
+                CachedAsyncImage(url: url, content: { $0.resizable().scaledToFit() },
+                                 placeholder: { Color.clear })
+                    .frame(width: 24, height: 24)
+                    .frame(width: 34, height: 34)
+            } else {
+                Text(emoji.name ?? "").font(.system(size: 22))
+                    .frame(width: 34, height: 34)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(emoji.name ?? "")
+    }
+
     private func customCell(_ emoji: Emoji, guildID: Snowflake) -> some View {
-        Button { onPick(emoji) } label: {
+        Button { pick(emoji) } label: {
             ZStack(alignment: .bottomTrailing) {
                 CachedAsyncImage(url: emoji.imageURL(size: 48),
                                  content: { $0.resizable().scaledToFit() },

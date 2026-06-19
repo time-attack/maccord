@@ -12,7 +12,7 @@ struct ReactionBarView: View {
         if !message.reactions.isEmpty {
             FlowLayout(spacing: 4, lineSpacing: 4) {
                 ForEach(message.reactions) { reaction in
-                    ReactionPill(reaction: reaction) {
+                    ReactionPill(reaction: reaction, message: message) {
                         Task { await app.toggleReaction(messageID: message.id, emoji: reaction.emoji) }
                     }
                 }
@@ -50,9 +50,11 @@ struct AddReactionPill: View {
 
 private struct ReactionPill: View {
     let reaction: Reaction
+    let message: Message
     let onTap: () -> Void
 
     @State private var hovering = false
+    @State private var showDetails = false
 
     var body: some View {
         Button(action: onTap) {
@@ -74,7 +76,19 @@ private struct ReactionPill: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(reaction.emoji.name ?? reaction.emoji.reactionKey)
+        .help(tooltip)
+        .contextMenu {
+            Button { showDetails = true } label: { Label("View Reactions", systemImage: "person.2") }
+        }
+        .popover(isPresented: $showDetails, arrowEdge: .bottom) {
+            ReactionDetailsPopover(channelID: message.channelID, messageID: message.id, emoji: reaction.emoji)
+        }
+    }
+
+    private var tooltip: String {
+        let name = reaction.emoji.name ?? reaction.emoji.reactionKey
+        let label = reaction.emoji.isCustom ? ":\(name):" : name
+        return "\(reaction.count) reacted with \(label)"
     }
 
     @ViewBuilder

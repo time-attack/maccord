@@ -84,10 +84,21 @@ struct ChannelRowView: View {
             if app.isChannelMuted(channel.id) {
                 Button { app.unmuteChannel(channel.id) } label: { Label("Unmute Channel", systemImage: "bell") }
             }
+            if let gid = channel.guildID {
+                Button { app.notificationSettingsGuildID = gid } label: {
+                    Label("Notification Settings", systemImage: "bell.badge")
+                }
+                Button {
+                    Task { if let url = await app.createChannelInvite(channel.id) { Clipboard.copy(url) } }
+                } label: {
+                    Label("Invite People", systemImage: "person.crop.circle.badge.plus")
+                }
+            }
             Divider()
             Button { Clipboard.copy(app.channelLink(channel)) } label: { Label("Copy Link", systemImage: "link") }
             Button { Clipboard.copy(channel.id.description) } label: { Label("Copy Channel ID", systemImage: "number") }
         }
+        .help(channel.topic ?? "")
     }
 
     @Environment(AppState.self) private var app

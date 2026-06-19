@@ -22,7 +22,9 @@ struct MessageRowView: View {
 
     var body: some View {
         Group {
-            if message.type.isSystem {
+            if message.isDeleted {
+                deletedRow
+            } else if message.type.isSystem {
                 systemRow
             } else {
                 normalRow
@@ -39,7 +41,7 @@ struct MessageRowView: View {
         }
         .background(mentionsMe ? DiscordColor.mentionBackground : Color.clear)
         .overlay(alignment: .topTrailing) {
-            if hovering && !message.type.isSystem && !isEditing {
+            if hovering && !message.type.isSystem && !isEditing && !message.isDeleted {
                 MessageHoverToolbar(
                     showReact: app.canAddReactions(in: message.channelID),
                     canEdit: isOwnMessage,
@@ -259,6 +261,24 @@ struct MessageRowView: View {
             .font(.system(size: 11))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Deleted tombstone
+
+    private var deletedRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "trash")
+                .font(.system(size: 13))
+                .foregroundStyle(DiscordColor.dangerRed.opacity(0.8))
+                .frame(width: Layout.messageLeftGutter, alignment: .center)
+            Text("\(message.author.displayName) — this message was deleted")
+                .font(.system(size: 14).italic())
+                .foregroundStyle(DiscordColor.textMuted)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 3)
+        .padding(.trailing, 16)
+        .opacity(0.7)
     }
 
     // MARK: System
