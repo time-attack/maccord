@@ -1,0 +1,23 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+# maccord is a Swift Package Manager project (Foundation-only core, no external
+# dependencies) that builds a native macOS SwiftUI .app. It is a desktop GUI
+# client, not a server — there is no dev server and no configurable port, so
+# CONDUCTOR_PORT does not apply. Every workspace builds the same app bundle id
+# (com.maccord.app), so only one instance can run at a time → nonconcurrent.
+[scripts]
+# Prepare a new workspace: resolve + compile the package so the first agent
+# action is fast. No external deps, so this is offline, non-interactive, safe.
+setup = "swift build"
+
+# Run button: build a debug .app bundle and launch it via Launch Services.
+# `open -W` keeps this script alive while the app is open so Conductor's Run
+# state tracks the app. (CONDUCTOR_PORT is intentionally unused — no server.)
+run = "scripts/build-app.sh debug && open -W dist/maccord.app"
+
+# Before archiving: remove the generated, gitignored app bundle. Workspace-local
+# and non-destructive (touches only build output, never source or the Keychain).
+archive = "rm -rf dist"
+
+# Same bundle id + shared Keychain item across workspaces → don't run two at once.
+run_mode = "nonconcurrent"

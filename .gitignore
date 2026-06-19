@@ -1,0 +1,24 @@
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# Build output
+build/
+dist/
+maccord.app/
+
+# macOS
+.DS_Store
+
+# Secrets / local
+*.token
+.env
+
+# Conductor
+.context/
