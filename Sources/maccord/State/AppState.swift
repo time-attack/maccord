@@ -52,6 +52,8 @@ final class AppState {
     var showMemberList = true
     var showQuickSwitcher = false
     var scrollToMessageID: Snowflake?
+    /// Briefly flashed message after a jump (pins / replies / search results).
+    var highlightedMessageID: Snowflake?
     var hiddenMessageEmbeds: Set<Snowflake> = []
     var nsfwAcknowledged: Set<Snowflake> = []
     var channelMuteUntil: [Snowflake: Date] = [:]
@@ -97,6 +99,7 @@ final class AppState {
     private var lastTypingSent: [Snowflake: Date] = [:]
     private var lastSendAt: [Snowflake: Date] = [:]
     private var pendingReadAcks: [Snowflake: Task<Void, Never>] = [:]
+    private var highlightClearTask: Task<Void, Never>?
     /// Guards against repeated bootstraps (e.g. multiple restored windows each
     /// firing `.task`) and overlapping connects, which would churn the socket.
     private var hasBootstrapped = false
@@ -310,7 +313,37 @@ final class AppState {
         await gateway.updatePresence(status: currentUserStatus.rawValue, activities: activities)
     }
 
-    func jumpToMessage(_ id: Snowflake) { scrollToMessageID = id }
+    /// Scroll to (and briefly highlight) a message — used by replies, pinned
+    /// messages and search results. Switches channels and loads a window around
+    /// the target first when it isn't already on screen.
+    func jumpToMessage(_ id: Snowflake, in channelID: Snowflake? = nil) {
+        Task { await performJump(to: id, inChannel: channelID ?? selectedChannelID) }
+    }
+
+    private func performJump(to id: Snowflake, inChannel channelID: Snowflake?) async {
+        guard let channelID else { return }
+        if selectedChannelID != channelID {
+            if let gid = channelsByID[channelID]?.guildID { selectedGuildID = gid }
+            await selectChannel(channelID)
+        }
+        let store = messageStore(for: channelID)
+        if !store.messages.contains(where: { $0.id == id }) {
+            await store.loadAround(messageID: id)
+        }
+        scrollToMessageID = id
+        flashHighlight(id)
+    }
+
+    /// Pulse a message's background for a couple of seconds after jumping to it.
+    private func flashHighlight(_ id: Snowflake) {
+        highlightedMessageID = id
+        highlightClearTask?.cancel()
+        highlightClearTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            guard !Task.isCancelled, let self, self.highlightedMessageID == id else { return }
+            self.highlightedMessageID = nil
+        }
+    }
 
     func markChannelUnread(_ channelID: Snowflake) {
         let store = messageStore(for: channelID)

@@ -28,7 +28,8 @@ struct MessageRowView: View {
                 normalRow
             }
         }
-        .background(hovering ? DiscordColor.messageHover : Color.clear)
+        .background(rowBackground)
+        .animation(.easeInOut(duration: 0.35), value: isHighlighted)
         .overlay(alignment: .leading) {
             if mentionsMe {
                 Rectangle()
@@ -43,9 +44,12 @@ struct MessageRowView: View {
                     showReact: app.canAddReactions(in: message.channelID),
                     canEdit: isOwnMessage,
                     canDelete: app.canDeleteMessage(message),
+                    isPinned: message.pinned,
+                    canPin: canPinMessages,
                     onReact: { showReactionPicker = true },
                     onReply: { onReply(message) },
                     onEdit: { beginEditing() },
+                    onPin: { Task { await app.pinMessage(message.id, pinned: message.pinned) } },
                     onDelete: { confirmingDelete = true }
                 )
                 .padding(.trailing, Layout.messageHGutter)
@@ -210,7 +214,8 @@ struct MessageRowView: View {
                     }
                 }
             }
-            if !message.embeds.isEmpty, !app.hiddenMessageEmbeds.contains(message.id) {
+            if !message.embeds.isEmpty, !app.hiddenMessageEmbeds.contains(message.id),
+               !(message.flags?.contains(.suppressEmbeds) ?? false) {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(message.embeds) { embed in
                         EmbedView(embed: embed)
@@ -333,13 +338,39 @@ struct MessageRowView: View {
     private var markdownContext: MarkdownContext {
         var users: [Snowflake: String] = [:]
         for user in message.mentions { users[user.id] = user.displayName }
+        // Resolve <#channel> mentions to their names (was previously empty, so
+        // every channel mention rendered as a bare "channel" placeholder).
+        var channels: [Snowflake: String] = [:]
+        if let store = app.selectedGuildStore {
+            for (id, channel) in store.channels { channels[id] = channel.name ?? "channel" }
+        }
         return MarkdownContext(
             users: users,
-            channels: [:],
+            channels: channels,
             roles: app.selectedGuildStore?.roles ?? [:],
             currentUserID: app.currentUser?.id,
             baseSize: 15
         )
+    }
+
+    private var isHighlighted: Bool { app.highlightedMessageID == message.id }
+
+    /// Row background: a brief blurple flash after a jump wins over the hover tint.
+    @ViewBuilder private var rowBackground: some View {
+        if isHighlighted {
+            DiscordColor.blurple.opacity(0.16)
+        } else if hovering {
+            DiscordColor.messageHover
+        } else {
+            Color.clear
+        }
+    }
+
+    /// Pinning requires Manage Messages in guilds; always allowed in DMs.
+    private var canPinMessages: Bool {
+        if app.selectedChannel?.type.isDM == true { return true }
+        guard let perms = app.effectivePermissions(in: message.channelID) else { return false }
+        return perms.contains(.manageMessages) || perms.contains(.administrator)
     }
 
     private func quickReact() async {

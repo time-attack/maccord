@@ -59,6 +59,25 @@ final class MessageStore {
         }
     }
 
+    /// Load a window of history centred on `messageID` (jump-to-message) and merge
+    /// it into the list, so a pinned/searched/replied message that isn't in the
+    /// current window becomes scrollable. Existing (possibly live) copies win.
+    func loadAround(messageID: Snowflake) async {
+        if messages.contains(where: { $0.id == messageID }) { return }
+        loadError = nil
+        do {
+            let fetched = try await rest.getMessages(channelID: channelID, around: messageID, limit: 50)
+            guard !fetched.isEmpty else { return }
+            var byID: [Snowflake: Message] = [:]
+            for m in messages { byID[m.id] = m }
+            for m in fetched where byID[m.id] == nil { byID[m.id] = m }
+            messages = byID.values.sorted { $0.id < $1.id }
+            loadedInitial = true
+        } catch {
+            loadError = friendly(error)
+        }
+    }
+
     // MARK: Live events
 
     func append(_ message: Message) {

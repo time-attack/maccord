@@ -56,12 +56,24 @@ struct MessageListView: View {
             }
             .onChange(of: app.scrollToMessageID) { _, target in
                 guard let target else { return }
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo("msg-\(target.rawValue)", anchor: .center)
-                }
-                app.scrollToMessageID = nil
+                Task { await scrollToTarget(target, proxy: proxy) }
             }
         }
+    }
+
+    /// Scroll a jumped-to message into view, waiting for it to be loaded/laid out
+    /// first (a pin/search jump may still be merging a fetched `around` window).
+    @MainActor
+    private func scrollToTarget(_ target: Snowflake, proxy: ScrollViewProxy) async {
+        for _ in 0..<12 {
+            if store.messages.contains(where: { $0.id == target }) { break }
+            try? await Task.sleep(nanoseconds: 60_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 60_000_000)  // let the LazyVStack lay out
+        withAnimation(.easeOut(duration: 0.25)) {
+            proxy.scrollTo("msg-\(target.rawValue)", anchor: .center)
+        }
+        app.scrollToMessageID = nil
     }
 
     private func jumpToPresent(_ proxy: ScrollViewProxy) -> some View {

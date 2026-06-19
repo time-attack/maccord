@@ -5,9 +5,12 @@ struct MessageHoverToolbar: View {
     var showReact: Bool = true
     var canEdit: Bool = false
     var canDelete: Bool = false
+    var isPinned: Bool = false
+    var canPin: Bool = false
     var onReact: () -> Void = {}
     var onReply: () -> Void = {}
     var onEdit: () -> Void = {}
+    var onPin: () -> Void = {}
     var onDelete: () -> Void = {}
 
     var body: some View {
@@ -19,6 +22,10 @@ struct MessageHoverToolbar: View {
                 button("arrowshape.turn.up.left.fill", help: "Reply", action: onReply)
                 if canEdit {
                     button("square.and.pencil", help: "Edit", action: onEdit)
+                }
+                if canPin {
+                    button(isPinned ? "pin.slash.fill" : "pin.fill",
+                           help: isPinned ? "Unpin Message" : "Pin Message", action: onPin)
                 }
                 if canDelete {
                     Button(action: onDelete) {
