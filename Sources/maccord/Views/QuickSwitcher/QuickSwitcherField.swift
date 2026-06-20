@@ -33,16 +33,18 @@ struct QuickSwitcherField: NSViewRepresentable {
     func updateNSView(_ nsView: NSTextField, context: Context) {
         context.coordinator.parent = self
         if nsView.stringValue != text { nsView.stringValue = text }
-        // Grab first responder as soon as the field is in a window (retries until then).
-        if !context.coordinator.didFocus, let window = nsView.window {
-            window.makeFirstResponder(nsView)
-            context.coordinator.didFocus = true
+        // Take first responder synchronously (we're already on the main actor here)
+        // whenever the field isn't editing. The old code attempted this exactly once
+        // and ignored failure, so if the sheet window wasn't key yet focus failed
+        // forever and typing did nothing. The view nudges a few re-renders right
+        // after open (see `focusTick`) so this retries until the window is key.
+        if nsView.currentEditor() == nil {
+            nsView.window?.makeFirstResponder(nsView)
         }
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: QuickSwitcherField
-        var didFocus = false
 
         init(_ parent: QuickSwitcherField) { self.parent = parent }
 

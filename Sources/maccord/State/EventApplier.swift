@@ -185,6 +185,9 @@ enum EventApplier {
         maybeAutoSelect(app)
         if !app.isBotAccount {
             Task { await app.refreshRelationships() }
+            // Eagerly complete the ⌘K index: fetch every guild's channels now so the
+            // quick switcher can search the whole account from the moment it opens.
+            app.hydrateGuildsForSearch()
             // Preload other guilds' channels (complete quick switcher) + history.
             app.startBackgroundPreloading()
         }

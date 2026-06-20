@@ -13,7 +13,7 @@ struct KeybindsHelpView: View {
     }
 
     private let shortcuts: [Shortcut] = [
-        .init(keys: "⌘K", action: "Quick Switcher"),
+        .init(keys: "⌘K", action: "Quick Switcher — jump to any server, channel, DM or friend"),
         .init(keys: "⌘U", action: "Toggle Member List"),
         .init(keys: "⌘/", action: "Keyboard Shortcuts"),
         .init(keys: "⌥↑", action: "Previous Channel"),

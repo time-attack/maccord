@@ -1,0 +1,59 @@
+<svg width="1280" height="440" viewBox="0 0 1280 440" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#15172B"/>
+      <stop offset="0.6" stop-color="#0F1016"/>
+      <stop offset="1" stop-color="#0B0C10"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.0" r="0.8">
+      <stop offset="0" stop-color="#5865F2" stop-opacity="0.55"/>
+      <stop offset="0.45" stop-color="#5865F2" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#5865F2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#C9CEF5"/>
+    </linearGradient>
+    <filter id="iconshadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="14" stdDeviation="28" flood-color="#5865F2" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="440" fill="url(#bg)"/>
+  <rect width="1280" height="440" fill="url(#glow)"/>
+
+  <!-- subtle grid dots -->
+  <g fill="#FFFFFF" opacity="0.04">
+    <circle cx="120" cy="360" r="3"/><circle cx="200" cy="390" r="3"/><circle cx="1080" cy="120" r="3"/>
+    <circle cx="1160" cy="200" r="3"/><circle cx="980" cy="360" r="3"/><circle cx="300" cy="120" r="3"/>
+  </g>
+
+  <g filter="url(#iconshadow)">
+    <image x="552" y="48" width="176" height="176" xlink:href="maccord-icon.png"/>
+  </g>
+
+  <text x="640" y="300" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="104" font-weight="800" letter-spacing="-2"
+        fill="url(#word)" text-anchor="middle">Maccord</text>
+
+  <text x="640" y="356" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="27" font-weight="500" fill="#B7BCEA" text-anchor="middle">
+    A truly native macOS Discord client — SwiftUI, not Electron.
+  </text>
+
+  <!-- feature chips -->
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" font-weight="600">
+    <g transform="translate(372,392)">
+      <rect width="190" height="44" rx="22" fill="#5865F2" fill-opacity="0.14" stroke="#5865F2" stroke-opacity="0.5"/>
+      <text x="95" y="29" fill="#C9CEF5" text-anchor="middle">⚡ Instant launch</text>
+    </g>
+    <g transform="translate(580,392)">
+      <rect width="160" height="44" rx="22" fill="#43B581" fill-opacity="0.13" stroke="#43B581" stroke-opacity="0.5"/>
+      <text x="80" y="29" fill="#A7E8C9" text-anchor="middle">~200 MB RAM</text>
+    </g>
+    <g transform="translate(758,392)">
+      <rect width="150" height="44" rx="22" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.18"/>
+      <text x="75" y="29" fill="#E6E8F0" text-anchor="middle">🪟 Liquid Glass</text>
+    </g>
+  </g>
+</svg>

@@ -113,7 +113,9 @@ struct SearchPanelView: View {
     private func resultRow(_ msg: Message) -> some View {
         Button {
             if let gid = msg.guildID { app.selectedGuildID = gid }
-            Task { await app.selectChannel(msg.channelID) }
+            // Jump to the matched message (loads a window around it + flashes it),
+            // not merely the channel — that's what makes a result a real "link".
+            app.jumpToMessage(msg.id, in: msg.channelID)
             dismiss()
         } label: {
             HStack(alignment: .top, spacing: 10) {

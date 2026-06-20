@@ -40,5 +40,13 @@ let package = Package(
                 .swiftLanguageMode(.v6)
             ]
         ),
+        .testTarget(
+            name: "maccordTests",
+            dependencies: ["maccord", "MaccordCore"],
+            path: "Tests/maccordTests",
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ]
+        ),
     ]
 )

@@ -54,6 +54,11 @@ public enum DiscordCDN {
         url("/banners/\(guildID.rawValue)/\(hash).\(ext(for: hash))", size: size)
     }
 
+    /// Group-DM icon (`channel.icon` hash) — `/channel-icons/{id}/{hash}.png`.
+    public static func channelIcon(channelID: Snowflake, hash: String, size: Int = 64) -> URL? {
+        url("/channel-icons/\(channelID.rawValue)/\(hash).\(ext(for: hash))", size: size)
+    }
+
     // MARK: Emoji / sticker
 
     public static func emoji(id: Snowflake, animated: Bool, size: Int = 64) -> URL? {

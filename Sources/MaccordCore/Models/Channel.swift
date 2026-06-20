@@ -126,11 +126,23 @@ public struct Channel: Codable, Identifiable, Hashable, Sendable {
 
     /// Group-DM icon, or first recipient avatar for a 1:1 DM.
     public func iconURL(currentUserID: Snowflake?, size: Int = 64) -> URL? {
-        if type == .dm {
+        switch type {
+        case .dm:
             let other = recipients?.first(where: { $0.id != currentUserID }) ?? recipients?.first
             return other?.avatarURL(size: size)
+        case .groupDM:
+            if let icon { return DiscordCDN.channelIcon(channelID: id, hash: icon, size: size) }
+            // No custom group icon → fall back to a member's avatar.
+            let other = recipients?.first(where: { $0.id != currentUserID }) ?? recipients?.first
+            return other?.avatarURL(size: size)
+        default:
+            return nil
         }
-        return nil
+    }
+
+    /// The "other" party of a 1:1 DM (used for presence dots / profile links).
+    public func otherRecipient(currentUserID: Snowflake?) -> User? {
+        recipients?.first(where: { $0.id != currentUserID }) ?? recipients?.first
     }
 
     public var slowmodeSeconds: Int { rateLimitPerUser ?? 0 }

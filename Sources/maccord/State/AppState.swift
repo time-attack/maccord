@@ -173,6 +173,14 @@ final class AppState {
         }
     }
 
+    /// Number of indexable guild channels currently loaded — drives the switcher's
+    /// live "N channels" readout so it's obvious when the account is still loading.
+    var indexableChannelCount: Int {
+        channelsByID.values.reduce(0) { count, ch in
+            count + ((ch.guildID != nil && (ch.type.isTextLike || ch.type.isVoice)) ? 1 : 0)
+        }
+    }
+
     func logIn(token: String) async {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard TokenStore.looksValid(trimmed) else {
@@ -1080,6 +1088,37 @@ final class AppState {
             await self.preloadUnread()
         }
     }
+
+    /// PROJECT SEARCH: ensure every guild is hydrated (channels + roles + your
+    /// member) so the ⌘K index covers the whole account AND can hide channels you
+    /// can't view. READY doesn't reliably inline channels for large accounts, and
+    /// the can-view filter needs your member roles — `hydrateGuildIfNeeded` fetches
+    /// exactly what's missing per guild. Deferred + background + low-concurrency so
+    /// it never starves the foreground channel load (which would hang on "loading").
+    /// Idempotent: fully-hydrated guilds skip.
+    func hydrateGuildsForSearch() {
+        guard !isBotAccount else { return }   // bots already get channels via GUILD_CREATE
+        guard !isFetchingSearchChannels else { return }
+        let pending = guildOrder.filter {
+            (guildStores[$0]?.channels.isEmpty ?? true) || myMembers[$0] == nil
+        }
+        guard !pending.isEmpty else { return }
+        isFetchingSearchChannels = true
+        Task(priority: .background) { [weak self] in
+            guard let self else { return }
+            defer { self.isFetchingSearchChannels = false }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            MaccordLog.log("SEARCH hydrate: \(pending.count)/\(self.guildOrder.count) guilds pending (channelsByID=\(self.channelsByID.count))")
+            await self.runThrottled(pending, limit: 3, priority: .background) { [weak self] gid in
+                await self?.hydrateGuildIfNeeded(gid)
+            }
+            MaccordLog.log("SEARCH hydrate done: channelsByID=\(self.channelsByID.count) indexable=\(self.indexableChannelCount)")
+        }
+    }
+
+    /// True while the background hydration sweep for ⌘K is in flight — the switcher
+    /// shows an "indexing…" hint instead of a misleading "no matches".
+    private(set) var isFetchingSearchChannels = false
 
     /// Preload only unread channels/DMs (the high-value case), very gently.
     private func preloadUnread() async {
